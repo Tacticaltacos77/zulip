@@ -10,8 +10,8 @@ from zerver.lib.exceptions import JsonableError
 from zerver.lib.message import access_message
 from zerver.lib.response import json_success
 from zerver.lib.typed_endpoint import typed_endpoint
-from zerver.lib.validator import validate_poll_data, validate_todo_data
-from zerver.lib.widget import get_widget_type
+from zerver.lib.validator import validate_poll_data, validate_todo_data, validate_roll_data
+from zerver.lib.widget import get_new_roll_content, get_total_rolls, get_widget_type
 from zerver.models import UserProfile
 
 
@@ -54,6 +54,15 @@ def process_submessage(
             validate_todo_data(todo_data=widget_data, is_widget_author=is_widget_author)
         except ValidationError as error:
             raise JsonableError(error.message)
+        
+    if widget_type == "roll":
+        try:
+            validate_roll_data(roll_data=widget_data, total_rolls=get_total_rolls(message_id=message.id))
+        except ValidationError as error:
+            raise JsonableError(error.message)
+
+        # Rolls the dice on the serverside to prevent tampering. 
+        content = get_new_roll_content(message_id=message.id)
 
     do_add_submessage(
         realm=user_profile.realm,

@@ -570,6 +570,25 @@ def validate_todo_data(todo_data: object, is_widget_author: bool) -> None:
     raise ValidationError(f"Unknown type for todo data: {todo_data['type']}")
 
 
+def validate_roll_data(roll_data: object, total_rolls: int) -> None:
+    check_dict([("type", check_string)])("roll data", roll_data)
+
+    assert isinstance(roll_data, dict)
+    if roll_data["type"] == "new_roll":
+        # Checks to see if max rolls has been reached
+        if total_rolls > MAX_IDX:
+            raise ValidationError("Max idx already reached for roll data")
+        checker = check_dict_only(
+            [
+                ("type", check_string),
+            ]
+        )
+        checker("roll data", roll_data)
+        return
+
+    raise ValidationError(f"Unknown type for roll data: {roll_data['type']}")
+
+
 def check_string_or_int_list(var_name: str, val: object) -> str | list[int]:
     if isinstance(val, str):
         return val

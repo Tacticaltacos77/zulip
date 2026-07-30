@@ -5,8 +5,15 @@ import orjson
 from django.core.exceptions import ValidationError
 
 from zerver.lib.test_classes import ZulipTestCase
-from zerver.lib.validator import check_widget_content
-from zerver.lib.widget import get_widget_data, get_widget_type
+from zerver.lib.validator import MAX_IDX, check_widget_content
+from zerver.lib.widget import (
+    MAX_ROLL_COUNT,
+    MAX_ROLL_RANGE,
+    MIN_ROLL_COUNT,
+    MIN_ROLL_RANGE,
+    get_widget_data,
+    get_widget_type,
+)
 from zerver.models import SubMessage, UserProfile
 
 if TYPE_CHECKING:
@@ -234,6 +241,99 @@ class WidgetContentTestCase(ZulipTestCase):
         self.assertEqual(submessage.msg_type, "widget")
         self.assertEqual(orjson.loads(submessage.content), expected_submessage_content)
 
+    def test_roll_values_accurate_to_object(self) -> None:
+        sender = self.example_user("cordelia")
+        stream_name = "Verona"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+        )
+
+        def send_roll_and_get_values(content: str) -> dict[str, Any]:
+            payload["content"] = content
+            result = self.api_post(sender, "/api/v1/messages", payload)
+            self.assert_json_success(result)
+
+            message = self.get_last_message()
+            self.assertEqual(message.content, content)
+
+            roll_submessage = (
+                SubMessage.objects.filter(message_id=message.id, msg_type="widget")
+                .order_by("id")
+                .last()
+            )
+            assert roll_submessage is not None
+            return orjson.loads(roll_submessage.content)
+        
+        def assert_valid_roll_values(
+                roll_content: dict[str, Any], *, expected_count: int, expected_range: int
+        ) -> None:
+            # Checks that a "new_roll" submessage's dice values are well
+            # within thier valid range and add up to the correct total
+            self.assertEqual(roll_content["type"], "new_roll")
+            values = roll_content["values"]
+            self.assert_length(values, expected_count)
+            for value in values:
+                self.assertGreaterEqual(value, 1)
+                self.assertLessEqual(value, expected_range)
+            self.assertEqual(roll_content["total"], sum(values))
+
+        # Create and test rolls 
+        roll_content = send_roll_and_get_values("/roll 2d6")
+        assert_valid_roll_values(roll_content, expected_count=2, expected_range=6)
+
+        roll_content = send_roll_and_get_values("/roll 9999")
+        assert_valid_roll_values(
+            roll_content, expected_count=1, expected_range=MAX_ROLL_RANGE
+        )
+
+        roll_content = send_roll_and_get_values("/roll 50d6")
+        assert_valid_roll_values(
+            roll_content, expected_count=MAX_ROLL_COUNT, expected_range=6
+        )
+
+    def test_roll_reroll_via_submessage(self) -> None:
+
+        author = self.example_user("cordelia")
+        other_user = self.example_user("hamlet")
+        stream_name = "Verona"
+        content = "/roll 2d6"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+        )
+        result = self.api_post(author, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+        message = self.get_last_message()
+
+        # Sending "/roll 2d6" should create 2 submessages: the
+        # widget config and the initial dice roll.
+        self.assert_length(
+            SubMessage.objects.filter(message_id=message.id, msg_type="widget"), 2
+        )
+        # Appends a roll
+        def click_roll(sender: UserProfile) -> "TestHttpResponse":
+            payload = dict(
+                message_id=message.id,
+                msg_type="widget",
+                content=orjson.dumps(dict(type="new_roll")).decode(),
+            )
+            return self.api_post(sender, "/api/v1/submessage", payload)
+
+        # A user other than the message author can roll
+        result = click_roll(other_user)
+        self.assert_json_success(result)
+
+        submessages = list(
+            SubMessage.objects.filter(message_id=message.id, msg_type="widget").order_by("id")
+        )
+        self.assert_length(submessages, 3)
+
     def test_poll_command_extra_data(self) -> None:
         sender = self.example_user("cordelia")
         stream_name = "Verona"
@@ -359,6 +459,61 @@ class WidgetContentTestCase(ZulipTestCase):
         submessage = SubMessage.objects.get(message_id=message.id)
         self.assertEqual(submessage.msg_type, "widget")
         self.assertEqual(orjson.loads(submessage.content), expected_submessage_content)
+
+    def test_roll_command_extra_data(self) -> None:
+        # Test fixture user/stream; not relevant to roll parsing itself.
+        sender = self.example_user("cordelia")
+        stream_name = "Verona"
+
+        # Base payload for a stream message; "content" gets overwritten
+        # per-case inside assert_extra_data below.
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+        )
+
+        def assert_extra_data(content: str, *, expected_count: int, expected_range: int) -> None:
+            payload["content"] = content
+            result = self.api_post(sender, "/api/v1/messages", payload)
+            self.assert_json_success(result)
+
+            message = self.get_last_message()
+
+            self.assertEqual(message.content, content)
+
+            config_submessage = (
+                SubMessage.objects.filter(message_id=message.id, msg_type="widget")
+                .order_by("id")
+                .first()
+            )
+            assert config_submessage is not None  
+            self.assertEqual(
+                orjson.loads(config_submessage.content),
+                dict(
+                    widget_type="roll",
+                    extra_data=dict(count=expected_count, range=expected_range),
+                ),
+            )
+        # Checks config to see if within expected range
+        # No arguments: defaults
+        assert_extra_data("/roll", expected_count=MIN_ROLL_COUNT, expected_range=MIN_ROLL_RANGE)
+
+        # A bare number sets the range (number of sides), not the count
+        assert_extra_data("/roll 6", expected_count=MIN_ROLL_COUNT, expected_range=6)
+
+        # "CdR" dice notation sets both count and range
+        assert_extra_data("/roll 2d20", expected_count=2, expected_range=20)
+
+        # The count is optional in dice notation
+        assert_extra_data("/roll d6", expected_count=MIN_ROLL_COUNT, expected_range=6)
+
+        # A plain space also works as the d separator
+        assert_extra_data("/roll 3 6", expected_count=3, expected_range=6)
+
+        # Range and count are clamped to their allowed bounds
+        assert_extra_data("/roll 9999", expected_count=1, expected_range=MAX_ROLL_RANGE)
+        assert_extra_data("/roll 50d6", expected_count=MAX_ROLL_COUNT, expected_range=6)
 
     def test_poll_permissions(self) -> None:
         cordelia = self.example_user("cordelia")
@@ -532,6 +687,48 @@ class WidgetContentTestCase(ZulipTestCase):
 
         assert_success(dict(type="new_task", key=7, task="eat", desc="", completed=False))
         assert_success(dict(type="strike", key="5,9"))
+
+    def test_new_roll_type_validation(self) -> None:
+        cordelia = self.example_user("cordelia")
+        hamlet = self.example_user("hamlet")
+        stream_name = "Verona"
+        content = "/roll 2d6"
+
+        payload = dict(
+            type="stream",
+            to=orjson.dumps(stream_name).decode(),
+            topic="whatever",
+            content=content,
+        )
+        result = self.api_post(cordelia, "/api/v1/messages", payload)
+        self.assert_json_success(result)
+
+        message = self.get_last_message()
+
+        def post_submessage(sender: UserProfile, content: str) -> "TestHttpResponse":
+            payload = dict(
+                message_id=message.id,
+                msg_type="widget",
+                content=content,
+            )
+            return self.api_post(sender, "/api/v1/submessage", payload)
+
+        def assert_error(content: str, error: str) -> None:
+            result = post_submessage(cordelia, content)
+            self.assert_json_error_contains(result, error)
+
+        assert_error('{"type": "bogus"}', "Unknown type for roll data: bogus")
+        
+        # Dice values/total are computed server-side. a client can't
+        # submit its own roll result
+        assert_error(
+            '{"type": "new_roll", "values": [6, 6], "total": 12}',
+            "Unexpected arguments",
+        )
+
+        # Anyone can click Roll regardless of who sent the message
+        result = post_submessage(hamlet, '{"type": "new_roll"}')
+        self.assert_json_success(result)
 
     def test_get_widget_type(self) -> None:
         sender = self.example_user("cordelia")
