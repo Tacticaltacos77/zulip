@@ -1,0 +1,9 @@
+{{#each rolls}}
+    <li>
+        <span class="roll-user-message">{{t "{name} rolled" }}: </span>
+        <span class="roll-values">
+            ({{#each values}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}):
+        </span>
+        <span class="roll-total">{{t "Total" }}: {{ numberFormat total }}</span>
+    </li>
+{{/each}}

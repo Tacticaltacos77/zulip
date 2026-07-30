@@ -611,6 +611,13 @@ export const slash_commands = [
         placeholder: $t({defaultMessage: "Task list"}),
         info: $t({defaultMessage: "Create a collaborative to-do list"}),
     },
+    {
+        text: "/roll",
+        name: "roll",
+        aliases: "",
+        placeholder: $t({defaultMessage: "#d#"}),
+        info: $t({defaultMessage: "Roll a dice"}),
+    },
 ];
 
 export const all_slash_commands: SlashCommand[] = [...dev_only_slash_commands, ...slash_commands];

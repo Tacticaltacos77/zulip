@@ -2,6 +2,8 @@ import * as z from "zod/mini";
 
 import {poll_widget_extra_data_schema} from "./poll_data.ts";
 import type {PollData, PollWidgetOutboundData} from "./poll_data.ts";
+import {roll_widget_extra_data_schema} from "./roll_data.ts";
+import type {RollData, RollWidgetOutboundData} from "./roll_data.ts";
 import {todo_widget_extra_data_schema} from "./todo_data.ts";
 import type {TaskData, TodoWidgetOutboundData} from "./todo_data.ts";
 import {type ZFormExtraData, zform_widget_extra_data_schema} from "./zform_data.ts";
@@ -14,7 +16,10 @@ import {type ZFormExtraData, zform_widget_extra_data_schema} from "./zform_data.
     to prevent circular dependencies.
 */
 
-export type WidgetOutboundData = PollWidgetOutboundData | TodoWidgetOutboundData;
+export type WidgetOutboundData =
+    | PollWidgetOutboundData
+    | TodoWidgetOutboundData
+    | RollWidgetOutboundData;
 
 export const any_widget_data_schema = z.discriminatedUnion("widget_type", [
     z.object({widget_type: z.literal("poll"), extra_data: poll_widget_extra_data_schema}),
@@ -26,6 +31,10 @@ export const any_widget_data_schema = z.discriminatedUnion("widget_type", [
         widget_type: z.literal("todo"),
         extra_data: z.nullable(todo_widget_extra_data_schema),
     }),
+    z.object({
+        widget_type: z.literal("roll"),
+        extra_data: roll_widget_extra_data_schema,
+    }),
 ]);
 export type AnyWidgetData = z.infer<typeof any_widget_data_schema>;
 export type WidgetData =
@@ -34,4 +43,5 @@ export type WidgetData =
           data: TaskData;
       }
     | {widget_type: "poll"; data: PollData}
+    | {widget_type: "roll"; data: RollData}
     | {widget_type: "zform"; data: ZFormExtraData | undefined};

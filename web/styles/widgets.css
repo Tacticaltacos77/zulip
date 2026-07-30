@@ -112,9 +112,11 @@
 }
 
 .todo-widget,
-.poll-widget {
+.poll-widget,
+.roll-widget {
     .poll-question-header,
-    .todo-task-list-title-header {
+    .todo-task-list-title-header,
+    .roll-title-header {
         font-size: 1.1em;
         font-weight: 600;
     }
@@ -221,9 +223,37 @@
     }
 }
 
+.roll-widget {
+    .roll-box {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 5px;
+    }
+
+    & li {
+        display: block;
+    }
+
+    .roll-user-message {
+        font-style: italic;
+    }
+
+    .roll-values {
+        font-weight: 600;
+        margin-right: 5px;
+    }
+
+    .roll-total {
+        color: hsl(156deg 41% 40%);
+        font-weight: bold;
+    }
+}
+
 button {
     &.add-task,
-    &.poll-option {
+    &.poll-option,
+    &.roll-button {
         color: hsl(156deg 41% 40%);
         border: 1px solid hsl(156deg 28% 70%);
         width: max-content;

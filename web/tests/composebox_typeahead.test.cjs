@@ -2633,6 +2633,14 @@ test("begins_typeahead", ({override, override_rewire}) => {
         placeholder: "translated: Question",
         type: "slash",
     };
+    const roll_command = {
+        text: "/roll",
+        name: "roll",
+        info: "translated: Roll a dice",
+        aliases: "",
+        placeholder: "translated: #d#",
+        type: "slash",
+    };
     const todo_command = {
         text: "/todo",
         name: "todo",
@@ -2642,7 +2650,7 @@ test("begins_typeahead", ({override, override_rewire}) => {
         type: "slash",
     };
 
-    assert_typeahead_equals("/", [me_command_item, poll_command, todo_command]);
+    assert_typeahead_equals("/", [me_command_item, poll_command, roll_command, todo_command]);
     assert_typeahead_equals("/m", [me_command_item]);
     // Slash commands can only occur at the start of a message
     assert_typeahead_equals(" /m", []);
@@ -2654,6 +2662,11 @@ test("begins_typeahead", ({override, override_rewire}) => {
     assert_typeahead_equals("abc/po", []);
     assert_typeahead_equals("hello /poll", []);
     assert_typeahead_equals("\n/pol", []);
+    assert_typeahead_equals("/roll", [roll_command]);
+    assert_typeahead_equals(" /rol", []);
+    assert_typeahead_equals("abc/ro", []);
+    assert_typeahead_equals("hello /roll", []);
+    assert_typeahead_equals("\n/rol", []);
     assert_typeahead_equals("/todo", [todo_command]);
     assert_typeahead_equals("my /todo", []);
     assert_typeahead_equals("\n/to", []);
